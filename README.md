@@ -30,3 +30,7 @@ References:
 8. https://github.com/esp-rs/awesome-esp-rust
 9. https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/linux-macos-setup.html
 10. https://www.jetbrains.com/help/rust/rust-toolchain.html#wsl
+11. https://fcc.report/FCC-ID/2BB77-ESPS3-32E
+12. https://github.com/microrobotics/ESP32-S3-N16R8/blob/main/ESP32-S3-N16R8_User_Guide.pdf
+13. https://documentation.espressif.com/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf
+14. https://device.report/fccid/2BB77ESPS332E
