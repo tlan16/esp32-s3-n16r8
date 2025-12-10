@@ -57,7 +57,7 @@ async fn main(spawner: Spawner) -> ! {
     // TODO: Spawn some tasks
     let _ = spawner;
 
-    let mut led = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
+    let mut led = Output::new(peripherals.GPIO43, Level::High, OutputConfig::default());
 
     loop {
         info!("Hello world!");
