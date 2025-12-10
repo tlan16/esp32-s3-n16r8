@@ -11,11 +11,11 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
+use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::timer::timg::TimerGroup;
 use esp_radio::ble::controller::BleConnector;
 use panic_rtt_target as _;
 use trouble_host::prelude::*;
-
 extern crate alloc;
 
 const CONNECTIONS_MAX: usize = 1;
@@ -57,8 +57,11 @@ async fn main(spawner: Spawner) -> ! {
     // TODO: Spawn some tasks
     let _ = spawner;
 
+    let mut led = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
+
     loop {
         info!("Hello world!");
+        led.toggle();
         Timer::after(Duration::from_secs(1)).await;
     }
 
