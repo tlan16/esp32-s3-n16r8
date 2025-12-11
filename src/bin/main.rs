@@ -60,10 +60,44 @@ async fn main(spawner: Spawner) -> ! {
     let mut led = Output::new(peripherals.GPIO43, Level::High, OutputConfig::default());
 
     loop {
-        info!("Hello world!");
+        info!("============START============");
+        info!("App config: {}", get_app_config());
+
         led.toggle();
+        info!("============END============");
         Timer::after(Duration::from_secs(1)).await;
     }
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples/src/bin
+}
+
+
+struct AppConfig {
+    ssid: &'static str,
+    password: &'static str,
+    is_hidden: bool,
+}
+
+impl defmt::Format for AppConfig {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(
+            fmt,
+            "AppConfig {{ ssid: {}, password: {}, is_hidden: {} }}",
+            self.ssid,
+            self.password,
+            self.is_hidden
+        );
+    }
+}
+
+fn get_app_config() -> AppConfig {
+    const APP_WIFI_SSID: &str = env!("APP_WIFI_SSID");
+    const APP_WIFI_PASSWORD: &str = env!("APP_WIFI_PASSWORD");
+    const APP_WIFI_IS_HIDDEN: &str = env!("APP_WIFI_IS_HIDDEN");
+
+    AppConfig {
+        ssid: APP_WIFI_SSID,
+        password: APP_WIFI_PASSWORD,
+        is_hidden: APP_WIFI_IS_HIDDEN == "true",
+    }
 }

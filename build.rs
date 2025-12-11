@@ -1,9 +1,28 @@
 fn main() {
+    dotenvy::dotenv().ok();
+
+    // Read config values from environment and pass to rustc
+    if let Ok(wifi_ssid) = std::env::var("APP_WIFI_SSID") {
+        println!("cargo:rustc-env=APP_WIFI_SSID={}", wifi_ssid);
+    }
+    if let Ok(wifi_pass) = std::env::var("APP_WIFI_PASSWORD") {
+        println!("cargo:rustc-env=APP_WIFI_PASSWORD={}", wifi_pass);
+    }
+    if let Ok(wifi_is_hidden) = std::env::var("APP_WIFI_IS_HIDDEN") {
+        println!("cargo:rustc-env=APP_WIFI_IS_HIDDEN={}", wifi_is_hidden);
+    }
+
+
     linker_be_nice();
     println!("cargo:rustc-link-arg-tests=-Tembedded-test.x");
     println!("cargo:rustc-link-arg=-Tdefmt.x");
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");
+
+    println!(
+        "cargo:rustc-link-arg=-Wl,--error-handling-script={}",
+        std::env::current_exe().unwrap().display()
+    );
 }
 
 fn linker_be_nice() {

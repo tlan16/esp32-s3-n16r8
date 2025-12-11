@@ -82,6 +82,9 @@ embedded-test = { version = "0.7.0", features = [
   "xtensa-semihosting",
 ] }
 
+[build-dependencies]
+dotenvy = "0.15"
+
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization
