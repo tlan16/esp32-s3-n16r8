@@ -13,4 +13,10 @@ echo "Installing espflash..."
 cargo install espflash --locked
 espflash --version
 
+echo "Installing espmonitor..."
+cargo install espmonitor
+
+echo "Installing probe-rs-tools..."
+cargo install probe-rs-tools
+
 printf "\nDone\n"
