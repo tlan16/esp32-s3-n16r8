@@ -45,12 +45,13 @@ echo "====================="
 # For esp-hal with no_std, binary is in xtensa-esp32s3-none-elf
 built_binary="target/xtensa-esp32s3-none-elf/release/esp32-s3-n16r8"
 echo "built_binary=$built_binary"
+ls -alh "$built_binary"
 
 if [ ! -f "$built_binary" ]; then
     echo "Error: Binary not found at $built_binary"
     exit 1
 fi
 
-espflash flash --port "$port" "$built_binary"
+espflash flash --monitor --port "$port" "$built_binary"
 
 printf "\n✓ Done\n"

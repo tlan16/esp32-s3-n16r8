@@ -8,19 +8,19 @@
 
 use bt_hci::controller::ExternalController;
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_net::{DhcpConfig, Runner, Stack, StackResources};
+use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 use esp_radio::ble::controller::BleConnector;
+use esp_radio::wifi::{
+    ClientConfig, ModeConfig, ScanConfig, WifiController, WifiDevice, WifiEvent, WifiStaState,
+};
 use log::info;
-use esp_radio::wifi::{ClientConfig, ModeConfig, WifiController, ScanConfig, ScanTypeConfig, WifiStaState, WifiEvent, WifiDevice};
-use smoltcp::iface::{SocketSet, SocketStorage};
-use smoltcp::wire::{DhcpOption};
-use trouble_host::prelude::*;
-use embassy_net::{DhcpConfig, StackResources,Runner, Stack};
+use trouble_host::prelude::{DefaultPacketPool, HostResources};
 
 extern crate alloc;
 
@@ -54,7 +54,6 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let rng = Rng::new();
     esp_rtos::start(timg0.timer0);
 
     info!("Embassy initialized!");
@@ -70,11 +69,9 @@ async fn main(spawner: Spawner) -> ! {
 
     let rng = Rng::new();
     let net_seed = rng.random() as u64 | ((rng.random() as u64) << 32);
-    let tls_seed = rng.random() as u64 | ((rng.random() as u64) << 32);
 
-    let mut dhcp_config = DhcpConfig::default();
+    let dhcp_config = DhcpConfig::default();
     let config = embassy_net::Config::dhcpv4(dhcp_config);
-
 
     let (stack, runner) = embassy_net::new(
         wifi_interface,
@@ -88,12 +85,6 @@ async fn main(spawner: Spawner) -> ! {
 
     wait_for_connection(stack).await;
 
-
-    // configure_wifi(&mut wifi_controller).await;
-    // scan_wifi(&mut wifi_controller);
-    // connect_wifi(&mut wifi_controller);
-
-    // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
     let transport = BleConnector::new(&radio_init, peripherals.BT, Default::default()).unwrap();
     let ble_controller = ExternalController::<_, 20>::new(transport);
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
@@ -108,17 +99,9 @@ async fn main(spawner: Spawner) -> ! {
 
         led.toggle();
 
-        // let ip_info = stack.get_ip_info();
-        // if ip_info.is_ok() {
-        //     info!("IP Address: {}", ip_info.unwrap().ip);
-        // } else{
-        //     info!("No IP Address assigned");
-        // }
         info!("============END============");
         Timer::after(Duration::from_secs(1)).await;
     }
-
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples/src/bin
 }
 
 async fn wait_for_connection(stack: Stack<'_>) {
@@ -180,61 +163,6 @@ fn timestamp() -> smoltcp::time::Instant {
     )
 }
 
-async fn configure_wifi(controller: &mut WifiController<'_>) {
-    let app_config = get_app_config();
-    controller
-        .set_power_saving(esp_radio::wifi::PowerSaveMode::None)
-        .unwrap();
-
-    let client_config = ModeConfig::Client(
-        ClientConfig::default()
-            .with_ssid(app_config.ssid.into())
-            .with_password(app_config.password.into()),
-    );
-    let res = controller.set_config(&client_config);
-    info!("wifi_set_configuration returned {:?}", res);
-
-    controller.start().unwrap();
-    info!("is wifi started: {:?}", controller.is_started());
-
-    // Add delay for hidden network stability
-    Timer::after(Duration::from_secs(1)).await;
-}
-
-fn scan_wifi(controller: &mut WifiController<'_>) {
-    use core::time::Duration;
-    let app_config = get_app_config();
-
-    info!("Start Wifi Scan");
-    let scan_type = ScanTypeConfig::Active {
-        min: Duration::from_millis(100),
-        max: Duration::from_millis(300),
-    };
-    let scan_config = ScanConfig::default()
-        .with_show_hidden(app_config.is_hidden)
-        .with_max_none().with_scan_type(scan_type);
-    let res = controller.scan_with_config(scan_config).unwrap();
-    for ap in res {
-        info!("{:?}", ap);
-    }
-}
-
-fn connect_wifi(controller: &mut WifiController<'_>) {
-    info!("{:?}", controller.capabilities());
-    info!("wifi_connect {:?}", controller.connect());
-
-    info!("Wait to get connected");
-    loop {
-        match controller.is_connected() {
-            Ok(true) => break,
-            Ok(false) => {}
-            Err(err) => panic!("{:?}", err),
-        }
-    }
-    info!("Connected: {:?}", controller.is_connected());
-}
-
-
 #[embassy_executor::task]
 async fn connection(mut controller: WifiController<'static>) {
     let app_config = get_app_config();
@@ -262,7 +190,9 @@ async fn connection(mut controller: WifiController<'static>) {
             info!("Wifi started!");
 
             info!("Scan");
-            let scan_config = ScanConfig::default().with_show_hidden(true).with_max_none();
+            let scan_config = ScanConfig::default()
+                .with_show_hidden(app_config.is_hidden)
+                .with_max_none();
             let result = controller
                 .scan_with_config_async(scan_config)
                 .await
