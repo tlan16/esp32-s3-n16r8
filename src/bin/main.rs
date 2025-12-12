@@ -8,22 +8,22 @@
 
 use blocking_network_stack::Stack;
 use bt_hci::controller::ExternalController;
-use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Instant, Timer};
+use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 use esp_radio::ble::controller::BleConnector;
-use esp_radio::wifi::{ClientConfig, ModeConfig, WifiController};
-use panic_rtt_target as _;
+use log::info;
+use esp_radio::wifi::{ClientConfig, ModeConfig, WifiController, ScanConfig};
 use smoltcp::iface::{SocketSet, SocketStorage};
-use smoltcp::wire::{DhcpOption, IpAddress};
+use smoltcp::wire::{DhcpOption};
 use trouble_host::prelude::*;
+use esp_println::println;
+
 extern crate alloc;
-use alloc::string::String;
-use esp_radio::wifi::ScanConfig;
 
 const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 1;
@@ -36,7 +36,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 async fn main(spawner: Spawner) -> ! {
     // generator version: 1.0.1
 
-    rtt_target::rtt_init_defmt!();
+    esp_println::logger::init_logger_from_env();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -66,7 +66,7 @@ async fn main(spawner: Spawner) -> ! {
     }]);
     socket_set.add(dhcp_socket);
     let now = || Instant::now().as_millis();
-    let mut stack = Stack::new(
+    let stack = Stack::new(
         create_interface(&mut device),
         device,
         socket_set,
@@ -91,12 +91,12 @@ async fn main(spawner: Spawner) -> ! {
 
     loop {
         info!("============START============");
-        info!("App config: {}", get_app_config());
+        info!("App config: {:?}", get_app_config());
 
         led.toggle();
 
         let ip_info = stack.get_ip_info();
-        if (ip_info.is_ok()) {
+        if ip_info.is_ok() {
             info!("IP Address: {}", ip_info.unwrap().ip);
         } else{
             info!("No IP Address assigned");
@@ -108,22 +108,11 @@ async fn main(spawner: Spawner) -> ! {
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples/src/bin
 }
 
+#[derive(Debug)]
 struct AppConfig {
     ssid: &'static str,
     password: &'static str,
     is_hidden: bool,
-}
-
-impl defmt::Format for AppConfig {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(
-            fmt,
-            "AppConfig {{ ssid: {}, password: {}, is_hidden: {} }}",
-            self.ssid,
-            self.password,
-            self.is_hidden
-        );
-    }
 }
 
 fn get_app_config() -> AppConfig {
@@ -178,8 +167,10 @@ fn configure_wifi(controller: &mut WifiController<'_>) {
 }
 
 fn scan_wifi(controller: &mut WifiController<'_>) {
+    let app_config = get_app_config();
+
     info!("Start Wifi Scan");
-    let scan_config = ScanConfig::default().with_show_hidden(true);
+    let scan_config = ScanConfig::default().with_show_hidden(app_config.is_hidden);
     let res = controller.scan_with_config(scan_config).unwrap();
     for ap in res {
         info!("{:?}", ap);

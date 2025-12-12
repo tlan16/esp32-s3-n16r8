@@ -34,7 +34,6 @@ jobs:
             args: --all-features --workspace -- -D warnings
     steps:
       - uses: actions/checkout@v4
-      - uses: hendrikmuhs/ccache-action@v1.2
       - uses: esp-rs/xtensa-toolchain@v1.5
         with:
           default: true
