@@ -28,5 +28,4 @@ if [ ! -f "$binary_path" ]; then
     exit 1
 fi
 
-killall probe-rs
 probe-rs attach --chip esp32s3 --rtt-scan-memory "$binary_path"

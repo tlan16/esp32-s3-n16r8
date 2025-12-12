@@ -6,17 +6,24 @@
     holding buffers for the duration of a data transfer."
 )]
 
+use blocking_network_stack::Stack;
 use bt_hci::controller::ExternalController;
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 use esp_radio::ble::controller::BleConnector;
+use esp_radio::wifi::{ClientConfig, ModeConfig, WifiController};
 use panic_rtt_target as _;
+use smoltcp::iface::{SocketSet, SocketStorage};
+use smoltcp::wire::{DhcpOption, IpAddress};
 use trouble_host::prelude::*;
 extern crate alloc;
+use alloc::string::String;
+use esp_radio::wifi::ScanConfig;
 
 const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 1;
@@ -39,14 +46,37 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let rng = Rng::new();
     esp_rtos::start(timg0.timer0);
 
     info!("Embassy initialized!");
 
     let radio_init = esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller");
-    let (mut _wifi_controller, _interfaces) =
+    let (mut wifi_controller, interfaces) =
         esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
             .expect("Failed to initialize Wi-Fi controller");
+    let mut device = interfaces.sta;
+    let mut socket_set_entries: [SocketStorage; 3] = Default::default();
+    let mut socket_set = SocketSet::new(&mut socket_set_entries[..]);
+    let mut dhcp_socket = smoltcp::socket::dhcpv4::Socket::new();
+    // we can set a hostname here (or add other DHCP options)
+    dhcp_socket.set_outgoing_options(&[DhcpOption {
+        kind: 12,
+        data: b"implRust",
+    }]);
+    socket_set.add(dhcp_socket);
+    let now = || Instant::now().as_millis();
+    let mut stack = Stack::new(
+        create_interface(&mut device),
+        device,
+        socket_set,
+        now,
+        rng.random(),
+    );
+    configure_wifi(&mut wifi_controller);
+    scan_wifi(&mut wifi_controller);
+    connect_wifi(&mut wifi_controller);
+
     // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
     let transport = BleConnector::new(&radio_init, peripherals.BT, Default::default()).unwrap();
     let ble_controller = ExternalController::<_, 20>::new(transport);
@@ -64,13 +94,19 @@ async fn main(spawner: Spawner) -> ! {
         info!("App config: {}", get_app_config());
 
         led.toggle();
+
+        let ip_info = stack.get_ip_info();
+        if (ip_info.is_ok()) {
+            info!("IP Address: {}", ip_info.unwrap().ip);
+        } else{
+            info!("No IP Address assigned");
+        }
         info!("============END============");
         Timer::after(Duration::from_secs(1)).await;
     }
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples/src/bin
 }
-
 
 struct AppConfig {
     ssid: &'static str,
@@ -100,4 +136,67 @@ fn get_app_config() -> AppConfig {
         password: APP_WIFI_PASSWORD,
         is_hidden: APP_WIFI_IS_HIDDEN == "true",
     }
+}
+
+pub fn create_interface(device: &mut esp_radio::wifi::WifiDevice) -> smoltcp::iface::Interface {
+    // users could create multiple instances but since they only have one WifiDevice
+    // they probably can't do anything bad with that
+    smoltcp::iface::Interface::new(
+        smoltcp::iface::Config::new(smoltcp::wire::HardwareAddress::Ethernet(
+            smoltcp::wire::EthernetAddress::from_bytes(&device.mac_address()),
+        )),
+        device,
+        timestamp(),
+    )
+}
+
+// some smoltcp boilerplate
+fn timestamp() -> smoltcp::time::Instant {
+    smoltcp::time::Instant::from_micros(
+        esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_micros() as i64,
+    )
+}
+
+fn configure_wifi(controller: &mut WifiController<'_>) {
+    let app_config = get_app_config();
+    controller
+        .set_power_saving(esp_radio::wifi::PowerSaveMode::None)
+        .unwrap();
+
+    let client_config = ModeConfig::Client(
+        ClientConfig::default()
+            .with_ssid(app_config.ssid.into())
+            .with_password(app_config.password.into()),
+    );
+    let res = controller.set_config(&client_config);
+    info!("wifi_set_configuration returned {:?}", res);
+
+    controller.start().unwrap();
+    info!("is wifi started: {:?}", controller.is_started());
+}
+
+fn scan_wifi(controller: &mut WifiController<'_>) {
+    info!("Start Wifi Scan");
+    let scan_config = ScanConfig::default().with_show_hidden(true);
+    let res = controller.scan_with_config(scan_config).unwrap();
+    for ap in res {
+        info!("{:?}", ap);
+    }
+}
+
+fn connect_wifi(controller: &mut WifiController<'_>) {
+    info!("{:?}", controller.capabilities());
+    info!("wifi_connect {:?}", controller.connect());
+
+    info!("Wait to get connected");
+    loop {
+        match controller.is_connected() {
+            Ok(true) => break,
+            Ok(false) => {}
+            Err(err) => panic!("{:?}", err),
+        }
+    }
+    info!("Connected: {:?}", controller.is_connected());
 }
