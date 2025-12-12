@@ -23,6 +23,7 @@ log                    = "0.4.27"
 
 embassy-net = { version = "0.7.1", features = [
   "dhcpv4",
+  "dhcpv4-hostname",
   "log",
   "medium-ethernet",
   "tcp",
